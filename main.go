@@ -222,8 +222,8 @@ func main() {
 	e.GET("/api/results", func(c echo.Context) error {
 		pingResults.mu.RLock()
 		defer pingResults.mu.RUnlock()
-		if len(pingResults.results) > 500 {
-			return c.JSON(200, pingResults.results[len(pingResults.results)-501:])
+		if len(pingResults.results) > 500*len(config.Destinations) {
+			return c.JSON(200, pingResults.results[len(pingResults.results)-500*len(config.Destinations):])
 		} else {
 			return c.JSON(200, pingResults.results)
 		}
