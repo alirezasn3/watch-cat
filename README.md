@@ -9,7 +9,7 @@ WatchCat is a tool for monitoring network latency by pinging specified IP addres
 Download the latest release binary for Linux using the following command:
 
 ```bash
-curl -L https://github.com/alirezasn3/watchcat/releases/latest/download/watchcat_linux_amd64 -o watchcat
+curl -L https://github.com/alirezasn3/watchcat/releases/download/v1.0.0/watchcat-linux-amd64 -o watchcat
 ```
 
 ### Make the downloaded binary executable
