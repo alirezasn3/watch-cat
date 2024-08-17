@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"embed"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -42,33 +40,33 @@ type PingResults struct {
 	mu      sync.RWMutex
 }
 
-func (r *PingResult) serialize() []byte {
-	loc, e := time.LoadLocation("Iran")
-	if e != nil {
-		panic(e)
-	}
-	fmt.Println(time.Now().In(loc).Format("2006-01-02-15-04-05"))
+// func (r *PingResult) serialize() []byte {
+// 	loc, e := time.LoadLocation("Iran")
+// 	if e != nil {
+// 		panic(e)
+// 	}
+// 	fmt.Println(time.Now().In(loc).Format("2006-01-02-15-04-05"))
 
-	// Create a new buffer to write the serialized data to
-	var b bytes.Buffer
-	// Create a new gob encoder and use it to encode the person struct
-	enc := gob.NewEncoder(&b)
-	if err := enc.Encode(r); err != nil {
-		fmt.Println("Error encoding struct:", err)
-		return nil
-	}
-	// The serialized data can now be found in the buffer
-	return b.Bytes()
-}
+// 	// Create a new buffer to write the serialized data to
+// 	var b bytes.Buffer
+// 	// Create a new gob encoder and use it to encode the person struct
+// 	enc := gob.NewEncoder(&b)
+// 	if err := enc.Encode(r); err != nil {
+// 		fmt.Println("Error encoding struct:", err)
+// 		return nil
+// 	}
+// 	// The serialized data can now be found in the buffer
+// 	return b.Bytes()
+// }
 
-func (r *PingResult) deserialize(data []byte) {
-	b := bytes.NewBuffer(data)
-	// Create a new gob decoder and use it to decode the person struct
-	dec := gob.NewDecoder(b)
-	if err := dec.Decode(r); err != nil {
-		fmt.Println("Error decoding struct:", err)
-	}
-}
+// func (r *PingResult) deserialize(data []byte) {
+// 	b := bytes.NewBuffer(data)
+// 	// Create a new gob decoder and use it to decode the person struct
+// 	dec := gob.NewDecoder(b)
+// 	if err := dec.Decode(r); err != nil {
+// 		fmt.Println("Error decoding struct:", err)
+// 	}
+// }
 
 func ping(dst string) {
 	dstAddress := &net.IPAddr{IP: net.ParseIP(dst)}
