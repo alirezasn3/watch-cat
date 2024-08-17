@@ -2,19 +2,27 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
+	goSystemd "github.com/alirezasn3/go-systemd"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 )
+
+//go:embed public/build/*
+var publicFS embed.FS
 
 type Config struct {
 	ListenAddress  string   `json:"listenAddress"`
@@ -170,16 +178,54 @@ func main() {
 	for _, dst := range config.Destinations {
 		go ping(dst)
 	}
-	http.ListenAndServe(config.MonitorAddress, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pingResults.mu.RLock()
-		b, e := json.Marshal(pingResults.results)
-		pingResults.mu.RUnlock()
-		if e != nil {
-			fmt.Println(e)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+
+	if slices.Contains(os.Args, "--install") {
+		execPath, err := os.Executable()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
 		}
-		w.Header().Add("Access-Control-Allow-Origin", "*")
-		w.Write(b)
-	}))
+		err = goSystemd.CreateService(&goSystemd.Service{Name: "watchcat", ExecStart: execPath, Restart: "on-failure", RestartSec: "5s"})
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		} else {
+			fmt.Println("watchcat service created")
+			os.Exit(0)
+		}
+	} else if slices.Contains(os.Args, "--uninstall") {
+		err := goSystemd.DeleteService("watchcat")
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		} else {
+			fmt.Println("watchcat service deleted")
+			os.Exit(0)
+		}
+	}
+
+	e := echo.New()
+
+	e.Use(middleware.CORS())
+
+	if len(os.Args) > 1 && slices.Contains(os.Args, "--live") {
+		log.Print("using live mode")
+		execPath, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		path := filepath.Dir(execPath)
+		e.Static("/", filepath.Join(path, "public", "build"))
+	} else {
+		log.Print("using embed mode")
+		e.StaticFS("/*", echo.MustSubFS(publicFS, "public/build"))
+	}
+
+	e.GET("/api/results", func(c echo.Context) error {
+		pingResults.mu.RLock()
+		defer pingResults.mu.RUnlock()
+		return c.JSON(200, pingResults.results)
+	})
+
+	e.Logger.Fatal(e.Start(config.MonitorAddress))
 }
