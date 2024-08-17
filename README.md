@@ -2,6 +2,8 @@
 
 WatchCat is a tool for monitoring network latency by pinging specified IP addresses and providing a web interface to view the results. It can be run as a standalone application or installed as a systemd service for continuous monitoring. The application is configured via a config.json file
 
+![Lycaon Screenshot](screenshots/1.png)
+
 ## Installation
 
 ### Download the binary
