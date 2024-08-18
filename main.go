@@ -17,27 +17,18 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"google.golang.org/protobuf/proto"
 )
 
 //go:embed public/build/*
 var publicFS embed.FS
 
+var mu sync.RWMutex
+
 type Config struct {
 	ListenAddress  string   `json:"listenAddress"`
 	Destinations   []string `json:"destinations"`
 	MonitorAddress string   `json:"monitorAddress"`
-}
-
-type PingResult struct {
-	Destination string `json:"destination"`
-	RTT         int64  `json:"rtt"`
-	Seq         int    `json:"seq"`
-	At          int64  `json:"at"`
-}
-
-type PingResults struct {
-	results []PingResult
-	mu      sync.RWMutex
 }
 
 // func (r *PingResult) serialize() []byte {
@@ -46,7 +37,6 @@ type PingResults struct {
 // 		panic(e)
 // 	}
 // 	fmt.Println(time.Now().In(loc).Format("2006-01-02-15-04-05"))
-
 // 	// Create a new buffer to write the serialized data to
 // 	var b bytes.Buffer
 // 	// Create a new gob encoder and use it to encode the person struct
@@ -58,7 +48,6 @@ type PingResults struct {
 // 	// The serialized data can now be found in the buffer
 // 	return b.Bytes()
 // }
-
 // func (r *PingResult) deserialize(data []byte) {
 // 	b := bytes.NewBuffer(data)
 // 	// Create a new gob decoder and use it to decode the person struct
@@ -75,7 +64,7 @@ func ping(dst string) {
 	t := make(map[int]int64)
 
 	// create mutex for time map
-	l := &sync.RWMutex{}
+	l := &sync.Mutex{}
 
 	// create packet connection
 	c, e := icmp.ListenPacket("ip4:icmp", config.ListenAddress)
@@ -122,11 +111,46 @@ func ping(dst string) {
 		}
 	}()
 
+	// check for timed out packets
+	go func() {
+		var now int64
+		for {
+			now = time.Now().UnixMilli()
+			l.Lock()
+			for seq, r := range t {
+				if now-r > 5000 {
+					pingResults.Results = append(pingResults.Results, &PingResult{Destination: dst, RTT: -1, Seq: int32(seq), At: t[seq]})
+					t[seq] = -1
+				}
+			}
+			l.Unlock()
+			time.Sleep(time.Second * 10)
+		}
+	}()
+
+	// remove timed out packets from time map
+	go func() {
+		for {
+			l.Lock()
+			for seq, r := range t {
+				if r < 0 {
+					delete(t, seq)
+				}
+			}
+			l.Unlock()
+			time.Sleep(time.Minute)
+		}
+	}()
+
 	// read packets
 	b := make([]byte, 64)
 	var n int
 	var peer net.Addr
 	var now int64
+	var sentAt int64
+	var seq int
+	var m *icmp.Message
+	pid := os.Getpid() & 0xffff
 	for {
 		n, peer, e = c.ReadFrom(b)
 		now = time.Now().UnixMilli()
@@ -135,18 +159,20 @@ func ping(dst string) {
 		}
 
 		// parse packet
-		m, e := icmp.ParseMessage(ipv4.ICMPTypeEchoReply.Protocol(), b[:n])
+		m, e = icmp.ParseMessage(1, b[:n]) // ipv4.ICMPTypeEchoReply.Protocol() replaced with 1 to improve performance
 		if e != nil {
 			panic(e)
 		}
 
-		if peer.String() == dst && m.Body.(*icmp.Echo).ID == os.Getpid()&0xffff && m.Type == ipv4.ICMPTypeEchoReply {
-			// fmt.Printf("%d bytes from %s: icmp_seq=%d time=%d ms\n", n, dst, m.Body.(*icmp.Echo).Seq, now-t[m.Body.(*icmp.Echo).Seq])
-			pingResults.mu.Lock()
-			l.RLock()
-			pingResults.results = append(pingResults.results, PingResult{Destination: dst, RTT: now - t[m.Body.(*icmp.Echo).Seq], Seq: m.Body.(*icmp.Echo).Seq, At: t[m.Body.(*icmp.Echo).Seq]})
-			l.RUnlock()
-			pingResults.mu.Unlock()
+		if peer.String() == dst && m.Body.(*icmp.Echo).ID == pid && m.Type == ipv4.ICMPTypeEchoReply {
+			seq = m.Body.(*icmp.Echo).Seq
+			l.Lock()
+			sentAt = t[seq]
+			delete(t, seq)
+			l.Unlock()
+			mu.Lock()
+			pingResults.Results = append(pingResults.Results, &PingResult{Destination: dst, RTT: now - sentAt, Seq: int32(seq), At: sentAt})
+			mu.Unlock()
 		}
 	}
 }
@@ -220,12 +246,22 @@ func main() {
 	}
 
 	e.GET("/api/results", func(c echo.Context) error {
-		pingResults.mu.RLock()
-		defer pingResults.mu.RUnlock()
-		if len(pingResults.results) > 500*len(config.Destinations) {
-			return c.JSON(200, pingResults.results[len(pingResults.results)-500*len(config.Destinations):])
+		mu.RLock()
+		defer mu.RUnlock()
+		if len(pingResults.Results) > 500*len(config.Destinations) {
+			b, err := proto.Marshal(&PingResults{Results: pingResults.Results[len(pingResults.Results)-500*len(config.Destinations):]})
+			if err != nil {
+				e.Logger.Error(err)
+				return c.NoContent(500)
+			}
+			return c.Blob(200, "application/x-protobuf", b)
 		} else {
-			return c.JSON(200, pingResults.results)
+			b, err := proto.Marshal(&pingResults)
+			if err != nil {
+				e.Logger.Error(err)
+				return c.NoContent(500)
+			}
+			return c.Blob(200, "application/x-protobuf", b)
 		}
 	})
 

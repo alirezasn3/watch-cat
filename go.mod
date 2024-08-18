@@ -21,4 +21,5 @@ require (
 	github.com/alirezasn3/go-systemd v0.0.0-20240815201531-b72dd304f486
 	github.com/labstack/echo/v4 v4.12.0
 	golang.org/x/sys v0.23.0 // indirect
+	google.golang.org/protobuf v1.34.2
 )
