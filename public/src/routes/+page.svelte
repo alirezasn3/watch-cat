@@ -1,23 +1,29 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Chart from 'chart.js/auto';
+	import protobuf from 'protobufjs';
 
 	let canvas: HTMLCanvasElement;
 	let showDates = false;
 	let count = 100;
 
 	onMount(async () => {
-		let res = await fetch('/api/results');
-		let data: { destination: string; rtt: number; seq: number; at: number }[] = await res.json();
+		const pb = await protobuf.load('/PingResults.proto');
+		let res = await fetch('http://49.13.53.236:8080/api/results');
+		let ab = await res.arrayBuffer();
+		let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
+			.lookupType('PingResults')
+			.decode(new Uint8Array(ab), ab.byteLength)
+			.toJSON().Results;
 
 		let datasets: Record<string, { label: string; data: number[] }> = {};
-		let datasetLebels = new Set(...[data.map((r) => r.destination)]);
+		let datasetLebels = new Set(...[data.map((r) => r.Destination)]);
 		for (const l of datasetLebels) {
 			datasets[l] = {
 				label: l,
 				data: data
-					.filter((r) => r.destination === l)
-					.map((r) => r.rtt)
+					.filter((r) => r.Destination === l)
+					.map((r) => r.RTT)
 					.slice(-count)
 			};
 		}
@@ -71,7 +77,7 @@
 			data: {
 				labels: data
 					.map((r) => {
-						const d = new Date(r.at);
+						const d = new Date(Number(r.At));
 						return (
 							(showDates ? d.toDateString() : '') +
 							` ${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`
@@ -83,23 +89,26 @@
 		});
 
 		while (true) {
-			let res = await fetch('/api/results');
-			let data: { destination: string; rtt: number; seq: number; at: number }[] = await res.json();
-
-			datasetLebels = new Set(...[data.map((r) => r.destination)]);
+			let res = await fetch('http://49.13.53.236:8080/api/results');
+			const ab = await res.arrayBuffer();
+			let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
+				.lookupType('PingResults')
+				.decode(new Uint8Array(ab), ab.byteLength)
+				.toJSON().Results;
+			datasetLebels = new Set(...[data.map((r) => r.Destination)]);
 			for (const l of datasetLebels) {
 				datasets[l] = {
 					label: l,
 					data: data
-						.filter((r) => r.destination === l)
-						.map((r) => r.rtt)
+						.filter((r) => r.Destination === l)
+						.map((r) => r.RTT)
 						.slice(-count)
 				};
 			}
 
 			ch.data.labels = data
 				.map((r) => {
-					const d = new Date(r.at);
+					const d = new Date(Number(r.At));
 					return (
 						(showDates ? d.toDateString() : '') +
 						` ${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`

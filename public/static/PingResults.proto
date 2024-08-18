@@ -1,0 +1,16 @@
+syntax="proto3";
+
+option go_package = "./";
+
+package main;
+
+message PingResult {
+    string Destination = 1;
+    int64 RTT = 2;
+    int32 Seq = 3;
+    int64 At = 4;
+}
+
+message PingResults {
+    repeated PingResult Results = 1;
+}
