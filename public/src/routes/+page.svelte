@@ -9,7 +9,7 @@
 
 	onMount(async () => {
 		const pb = await protobuf.load('/PingResults.proto');
-		let res = await fetch('http://49.13.53.236:8080/api/results');
+		let res = await fetch('/api/results');
 		let ab = await res.arrayBuffer();
 		let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
 			.lookupType('PingResults')
@@ -89,7 +89,7 @@
 		});
 
 		while (true) {
-			let res = await fetch('http://49.13.53.236:8080/api/results');
+			let res = await fetch('/api/results');
 			const ab = await res.arrayBuffer();
 			let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
 				.lookupType('PingResults')
