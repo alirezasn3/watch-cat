@@ -9,7 +9,7 @@
 
 	onMount(async () => {
 		const pb = await protobuf.load('/PingResults.proto');
-		let res = await fetch('/api/results');
+		let res = await fetch('http://49.13.53.236:8080/api/results');
 		let ab = await res.arrayBuffer();
 		let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
 			.lookupType('PingResults')
@@ -89,7 +89,7 @@
 		});
 
 		while (true) {
-			let res = await fetch('/api/results');
+			let res = await fetch('http://49.13.53.236:8080/api/results');
 			const ab = await res.arrayBuffer();
 			let data: { Destination: string; RTT: number; Seq: number; At: number }[] = pb
 				.lookupType('PingResults')
@@ -123,8 +123,8 @@
 	});
 </script>
 
-<div class="mb-4 flex items-center">
-	<div class="flex items-center mr-4">
+<div class="flex items-center pb-4">
+	<div class="flex items-center">
 		<input id="show-dates" type="checkbox" class="mr-2" bind:value={showDates} />
 		<label for="show-dates"> Show Dates </label>
 	</div>
@@ -140,10 +140,15 @@
 			<option value="500">500</option>
 		</select>
 	</div>
+	<a target="_blank" href="https://github.com/alirezasn3/watchcat" class="ml-auto text-sm underline"
+		>WatchCat</a
+	>
 </div>
 <div>
-	<canvas
-		bind:this={canvas}
-		class="w-full h-[calc(100svh-136px)] p-4 bg-[#0b132b] rounded shadow-sm"
+	<canvas bind:this={canvas} class="w-full h-[calc(100svh-72px)] p-4 bg-[#0b132b] rounded shadow-sm"
 	></canvas>
 </div>
+
+<svelte:head>
+	<title>WatchCat</title>
+</svelte:head>
