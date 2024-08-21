@@ -23,39 +23,25 @@ import (
 //go:embed public/build/*
 var publicFS embed.FS
 
-var mu sync.RWMutex
-
 type Config struct {
 	ListenAddress  string   `json:"listenAddress"`
 	Destinations   []string `json:"destinations"`
 	MonitorAddress string   `json:"monitorAddress"`
 }
 
-// func (r *PingResult) serialize() []byte {
-// 	loc, e := time.LoadLocation("Iran")
-// 	if e != nil {
-// 		panic(e)
-// 	}
-// 	fmt.Println(time.Now().In(loc).Format("2006-01-02-15-04-05"))
-// 	// Create a new buffer to write the serialized data to
-// 	var b bytes.Buffer
-// 	// Create a new gob encoder and use it to encode the person struct
-// 	enc := gob.NewEncoder(&b)
-// 	if err := enc.Encode(r); err != nil {
-// 		fmt.Println("Error encoding struct:", err)
-// 		return nil
-// 	}
-// 	// The serialized data can now be found in the buffer
-// 	return b.Bytes()
-// }
-// func (r *PingResult) deserialize(data []byte) {
-// 	b := bytes.NewBuffer(data)
-// 	// Create a new gob decoder and use it to decode the person struct
-// 	dec := gob.NewDecoder(b)
-// 	if err := dec.Decode(r); err != nil {
-// 		fmt.Println("Error decoding struct:", err)
-// 	}
-// }
+type ResultsQueue struct {
+	Capacity int
+	Results  []*PingResult
+	Mu       sync.RWMutex
+}
+
+func (q *ResultsQueue) Append(r *PingResult) {
+	if len(q.Results) == q.Capacity {
+		q.Results = append(q.Results[1:], r)
+	} else {
+		q.Results = append(q.Results, r)
+	}
+}
 
 func ping(dst string) {
 	dstAddress := &net.IPAddr{IP: net.ParseIP(dst)}
@@ -119,7 +105,7 @@ func ping(dst string) {
 			l.Lock()
 			for seq, r := range t {
 				if now-r > 5000 {
-					pingResults.Results = append(pingResults.Results, &PingResult{Destination: dst, RTT: -1, Seq: int32(seq), At: t[seq]})
+					resultsQueue.Append(&PingResult{Destination: dst, RTT: -1, Seq: int32(seq), At: t[seq]})
 					t[seq] = -1
 				}
 			}
@@ -166,19 +152,22 @@ func ping(dst string) {
 
 		if peer.String() == dst && m.Body.(*icmp.Echo).ID == pid && m.Type == ipv4.ICMPTypeEchoReply {
 			seq = m.Body.(*icmp.Echo).Seq
-			l.Lock()
 			sentAt = t[seq]
+			l.Lock()
 			delete(t, seq)
 			l.Unlock()
-			mu.Lock()
-			pingResults.Results = append(pingResults.Results, &PingResult{Destination: dst, RTT: now - sentAt, Seq: int32(seq), At: sentAt})
-			mu.Unlock()
+			if now-sentAt > 5000 {
+				continue
+			}
+			resultsQueue.Mu.Lock()
+			resultsQueue.Append(&PingResult{Destination: dst, RTT: now - sentAt, Seq: int32(seq), At: sentAt})
+			resultsQueue.Mu.Unlock()
 		}
 	}
 }
 
 var config Config
-var pingResults PingResults
+var resultsQueue ResultsQueue
 
 func init() {
 	// Read config file
@@ -199,6 +188,8 @@ func init() {
 }
 
 func main() {
+	resultsQueue = ResultsQueue{Capacity: len(config.Destinations) * 500, Results: make([]*PingResult, 0, len(config.Destinations)*500)}
+
 	for _, dst := range config.Destinations {
 		go ping(dst)
 	}
@@ -246,24 +237,41 @@ func main() {
 	}
 
 	e.GET("/api/results", func(c echo.Context) error {
-		mu.RLock()
-		defer mu.RUnlock()
-		if len(pingResults.Results) > 500*len(config.Destinations) {
-			b, err := proto.Marshal(&PingResults{Results: pingResults.Results[len(pingResults.Results)-500*len(config.Destinations):]})
-			if err != nil {
-				e.Logger.Error(err)
-				return c.NoContent(500)
-			}
-			return c.Blob(200, "application/x-protobuf", b)
-		} else {
-			b, err := proto.Marshal(&pingResults)
-			if err != nil {
-				e.Logger.Error(err)
-				return c.NoContent(500)
-			}
-			return c.Blob(200, "application/x-protobuf", b)
+		resultsQueue.Mu.RLock()
+		defer resultsQueue.Mu.RUnlock()
+		b, err := proto.Marshal(&PingResults{Results: resultsQueue.Results})
+		if err != nil {
+			e.Logger.Error(err)
+			return c.NoContent(500)
 		}
+		return c.Blob(200, "application/x-protobuf", b)
 	})
 
 	e.Logger.Fatal(e.Start(config.MonitorAddress))
 }
+
+// func (r *PingResult) serialize() []byte {
+// 	loc, e := time.LoadLocation("Iran")
+// 	if e != nil {
+// 		panic(e)
+// 	}
+// 	fmt.Println(time.Now().In(loc).Format("2006-01-02-15-04-05"))
+// 	// Create a new buffer to write the serialized data to
+// 	var b bytes.Buffer
+// 	// Create a new gob encoder and use it to encode the person struct
+// 	enc := gob.NewEncoder(&b)
+// 	if err := enc.Encode(r); err != nil {
+// 		fmt.Println("Error encoding struct:", err)
+// 		return nil
+// 	}
+// 	// The serialized data can now be found in the buffer
+// 	return b.Bytes()
+// }
+// func (r *PingResult) deserialize(data []byte) {
+// 	b := bytes.NewBuffer(data)
+// 	// Create a new gob decoder and use it to decode the person struct
+// 	dec := gob.NewDecoder(b)
+// 	if err := dec.Decode(r); err != nil {
+// 		fmt.Println("Error decoding struct:", err)
+// 	}
+// }
